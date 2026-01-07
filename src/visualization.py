@@ -2,6 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import plotly.graph_objects as go
+from scipy.constants import k as k_B, e as q_e
 
 def plot_diode_fit(V_data, I_data, model, fitted_params, filename=None, temps=None):
     """
@@ -118,6 +119,86 @@ def diode_sat_current_plot(temps, model, fitted_params, filename=None):
         
     plt.show()
     
+def draw_diode_cross(ax, params, v_bias=0.0):
+    """
+    Draw cross-section of diode
+    """
+    ax.clear()
+    ax.set_xlim(-0.5, 3.5)
+    ax.set_ylim(-1.0, 2.0)
+    ax.axis('off')
+    ax.set_title(f"PN Junction State ($V_{{bias}}={v_bias}$)")
+    
+    v_bi = 0.7
+    if v_bias >= v_bi:
+        w_dep = 0.05
+    else:
+        w_dep = 0.3 * np.sqrt(max(0, v_bi - v_bias))
+        
+    p_width = 1.5 - w_dep
+    n_start = 1.5 + w_dep
+    n_width = 1.5 - w_dep
+    p_region = patches.Rectangle((0, -0.5), p_width, 1.0, edgecolor='black', facecolor='#ff9999')
+    n_region = patches.Rectangle((n_start, -0.5), n_width, 1.0, edgecolor='black', facecolor='#99ccff')
+    dep_region = patches.Rectangle((p_width, -0.5), 2 * w_dep, 1.0, edgecolor='black', facecolor='gray', hatch='///')
+    anode = patches.Rectangle((-0.1, -0.3), 0.1, 0.6, edgecolor='black', facecolor='gray')
+    cathode = patches.Rectangle((3.0, -0.3), 0.1, 0.6, edgecolor='black', facecolor='gray')
+    ax.add_patch(p_region)
+    ax.add_patch(n_region)
+    ax.add_patch(dep_region)
+    ax.add_patch(anode)
+    ax.add_patch(cathode)
+    ax.text(0.75, 0, 'P-Type\n(Anode)', ha='center', fontsize=8, fontweight='bold')
+    ax.text(2.25, 0, 'N-Type\n(Cathode)', ha='center', fontsize=8, fontweight='bold')
+    ax.text(1.5, 0.8, 'Depletion Region', ha='center', fontsize=8, fontweight='bold')
+    
+    T_ref = 300
+    Vt = (k_B * T_ref) / q_e
+        
+    if v_bias > 5 * Vt:
+        status = "Forward Bias"
+        color = 'green'
+    elif v_bias < -5 * Vt:
+        status = "Reverse Bias"
+        color = 'red'
+    else:
+        status = "Equilibrium"
+        color = 'blue'
+        
+    ax.text(1.5, -1.2, status, ha='center', color=color, fontsize=10, fontweight='bold')
+    
+def plot_3d_diode(model, params, v_max=1.0, t_min=280, t_max=340):
+    """
+    Plots 3D surface plot of diode current against voltage and temperature
+    """
+    fig = plt.figure(figsize=(10, 7))
+    v = np.linspace(0, v_max, 30)
+    t = np.linspace(t_min, t_max, 30)
+    V, T = np.meshgrid(v, t)
+    I = np.zeros_like(V)
+    
+    for i in range(V.shape[0]):
+        for j in range(T.shape[0]):
+            local_params = params.copy()
+            
+            if 'Eg' in params:
+                local_params['I_s'] = model.compute_sat_current(params['I_s'], params['Eg'], T[i, j])
+            
+            I[i, j] = model.compute_current([V[i, j]], local_params, T=T[i,j])[0]
+
+    fig = go.Figure(data=[go.Surface(z=I, x=v, y=t, colorscale='Viridis')])
+    fig.update_layout(
+        title='3D Characteristics Surface',
+        scene=dict(
+            xaxis_title='Voltage [V]',
+            yaxis_title='Temperature [K]',
+            zaxis_title='Current [A]'
+        ),
+        margin=dict(l=0, r=0, b=0, t=40)
+    )
+    
+    return fig
+
 def plot_mosfet_fit(V_gs, I_data, model, fitted_params, filename=None, yscale='linear'):
     """
     Generates a comparison of the Id-Vgs data and the Id-Vgs curve from the fitted parameters

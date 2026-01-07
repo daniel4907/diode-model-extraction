@@ -1,26 +1,26 @@
 # Compact Model Parameter Extraction Framework
 
-A Python framework for extracting semiconductor device compact model parameters from TCAD simulations.
+A Python framework for extracting semiconductor device compact model parameters from TCAD simulations, featuring interactive visualizations and Streamlit app dashboard.
 
 ## Current features:
 
-### Diode Characteristics
-* Extract saturation current $I_s$, ideality factor $n$, and series resistance $R_s$ from individual diode I-V curves
-* **Multi-Temperature Analysis**
-    * Perform global parameter extraction across a range of temperatures
-    * Extract semiconductor bandgap energy $E_g$ using physics-based scaling laws
-    * Visualize saturation current as a function of temperature
+### Parameter Extraction
+* Diode: extract $I_s$, $n$, and $R_s$ from synthetic or real data through a .csv file. Supports multi-temperature analysis to extract $E_g$ and visualize $I_s(T)$
+* MOSFET: Level 1 model (Schichman-Hodges) to extract $V_{th}$, $k_n$, and $\lambda$ from transfer and output characteristics
+* Generate noisy data using realistic synthesis datsets for testing extraction algorithms
+* Automatically generate SPICE-compatible model files from extracted parameters
 
-### MOSFET Characteristics
-* Level 1 model (Schichman-Hodges): supports cutoff, triode, and saturation regions
-* Extract threshold voltage and transconductance from transfer characteristics
-* Extract channel length modulation by fitting family of output characteristic curves simultaneously
-* Support for semi-log plotting to verify subthreshold behavior
+### Visualization
+* Interactive physical states: dynamic cross-section diagrams for both diodes and MOSFETs that respond to sliders
+* 3D characteristics surfaces: interactive 3D plots using Plotly to visualize device behavior over voltage and temperature ranges
+* Automated plotting: 2D plotting for fits, relative errors, and parameter trends
 
-### Utilities
-* Create noisy, realistic I-V datasets for testing algorithms
-* Automated plotting for fits, residuals, and parameter trends
-* Uses non-linear least squares (Trust Region Reflective algorithm) with physical bounds constraints
+### GUI
+Unified Streamlit dashboard that allows no-code interface that can:
+1. Generate synthetic data or upload custom CSVs
+2. Configure initial guesses and run extractions
+3. Inspect results via interactive 2D/3D plots and physical diagrams
+4. Export and download SPICE models
 
 ## Setup
 1. Clone the repository to your local machine
@@ -30,14 +30,22 @@ conda env create -f environment.yml
 conda activate compact-model-extraction
 ```
 
-Then, run the Jupyter notebooks found in ```/examples/``` directory.
+## Usage
+Run the dashboard locally with:
+```bash
+streamlit run app.py
+```
+
+Or, run the Jupyter notebooks found in ```/examples/``` directory.
 * `examples/diode_extraction.ipynb`: Diode parameter extraction demo
 * `examples/mosfet/extraction.ipynb`: MOSFET parameter extraction demo
 
 ## Project structure
-- 'src/models.py' - diode and MOSFET model implementation
-- 'src/extraction.py' - parameter extraction logic
-- 'src/visualization.py' - plotting helpers for fits and errors
-- 'tests/' - unit tests
-- 'examples/' - demonstration notebooks for model extraction
+- `src/models.py` - diode and MOSFET model implementation
+- `src/extraction.py` - parameter extraction logic
+- `src/visualization.py` - plotting helpers and interactive device diagrams
+- `src/utils.py` - SPICE model generation and data utilities
+- `tests/` - unit tests
+- `examples/` - demonstration notebooks for model extraction
+- `app.py` - Streamlit GUI app
 

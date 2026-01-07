@@ -10,7 +10,7 @@ sys.path.append(os.getcwd())
 from src.models import DiodeModel, MOSFETModel
 from src.extraction import ModelExtractor
 from src.utils import generate_spice_model
-from src.visualization import draw_mosfet_cross, plot_3d_fet_surface
+from src.visualization import *
 
 st.set_page_config(page_title="Compact Model Extractor", layout="wide") # set browser tab title and layout format
 st.title("Compact Model Parameter Extractor") # display main heading of app
@@ -125,6 +125,8 @@ if device_type == "Diode": # Diode logic
             g_Rs = st.number_input("Guess $R_{s}$ (Ω)", value=0.1)
             if fit_mode == "Multi-Temperature": # allow for initial Eg guess if using multi-temp diode data
                 g_Eg = st.number_input("Guess $E_{g}$ (eV)", value=1.1)
+            else:
+                g_Eg = 1.12
                 
             run_btn = st.button("Run Extraction", type="primary")
             
@@ -142,75 +144,114 @@ if device_type == "Diode": # Diode logic
                 initial = {'I_s': g_Is, 'n': g_n, 'R_s': g_Rs, 'Eg': g_Eg}
                 report = extractor.diode_temp_fit(datasets, initial_params=initial)
                 
-                st.success("Global Extraction Converged") # display success message box
-                m1, m2, m3, m4 = st.columns(4)
-                m1.metric('I_s (ref)', f"{report['parameters']['I_s']:.2e} A") # display label and value
-                m2.metric('E_g', f"{report['parameters']['Eg']:.4f} eV")
-                m3.metric('n', f"{report['parameters']['n']:.4f}")
-                m4.metric('R_s', f"{report['parameters']['R_s']:.4f} Ω")
+                st.session_state['diode_result'] = {
+                    'type': 'multi',
+                    'report': report,
+                    'datasets': datasets,
+                    'model': model
+                }
                 
-                st.divider()
-                st.subheader("SPICE Model")
-                spice_str = generate_spice_model(report['parameters'], "diode", model_name="Multitemp_Diode")
-                st.code(spice_str, language='spice')
-                
-                st.download_button(
-                    label="Download Model File",
-                    data=spice_str,
-                    file_name="diode_model.lib",
-                    mime="text/plain"
-                )
-                
-                fig, ax = plt.subplots(figsize=(10, 6))
-                colors = plt.cm.plasma(np.linspace(0, 1, len(datasets)))
-                T_ref = 300.0
-                fit_params = report['parameters']
-                
-                for idx, (v_data, i_data, T) in enumerate(datasets):
-                    c = colors[idx]
-                    ax.semilogy(v_data, i_data, 'o', alpha=0.4, color=c, label=f'{T}K Data')
-                    
-                    # Compute local fit curve
-                    Is_T = fit_params['I_s'] * (T / T_ref)**3 * np.exp(((fit_params['Eg'] * q_e) / k_B) * (1/T_ref - 1/T))
-                    p_local = {'I_s': Is_T, 'n': fit_params['n'], 'R_s': fit_params['R_s']}
-                    i_fit = model.compute_current(v_data, p_local, T=T)
-                    ax.semilogy(v_data, i_fit, '-', color=c, label=f'{T}K Fit')
-                
-                ax.set_xlabel("Voltage [V]")
-                ax.set_ylabel("Current [A]")
-                ax.set_title("Temperature-Dependent Diode Fit")
-                ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
-                st.pyplot(fig)
-                
-            else: # Single Curve Mode
-                initial = {'I_s': g_Is, 'n': g_n, 'R_s': g_Rs}
+            else:
+                initial = {'I_s': g_Is, 'n': g_n, 'R_s': g_Rs, 'Eg': g_Eg}
                 report = extractor.diode_fit(df['V'].values, df['I'].values, initial_params=initial)
-                st.success("Extraction Converged")
-                m1, m2, m3 = st.columns(3)
-                m1.metric('I_s', f"{report['parameters']['I_s']:.2e} A")
-                m2.metric('n', f"{report['parameters']['n']:.4f}")
-                m3.metric('R_s', f"{report['parameters']['R_s']:.4f} Ω")
                 
-                st.divider()
-                st.subheader("SPICE Model")
-                spice_str = generate_spice_model(report['parameters'], "diode", model_name="Singletemp_Diode")
-                st.code(spice_str, language='spice')
+                st.session_state['diode_result'] = {
+                    'type': 'single',
+                    'report': report,
+                    'df': df,
+                    'model': model
+                }
                 
-                st.download_button(
-                    label="Download Model File",
-                    data=spice_str,
-                    file_name="diode_model.lib",
-                    mime="text/plain"
-                )
+    if 'diode_result' in st.session_state:
+        result = st.session_state['diode_result']
+        report = result['report']
+        model = result['model']
+        
+        st.divider()
+        st.subheader("SPICE Model")
+        spice_str = generate_spice_model(report['parameters'], "diode", model_name="Multitemp_Diode")
+        st.code(spice_str, language='spice')
+        
+        st.download_button(
+            label="Download Model File",
+            data=spice_str,
+            file_name="diode_model.lib",
+            mime="text/plain"
+        )
+        
+        if result['type'] == 'multi':
+            datasets = result['datasets']
+            fig, ax = plt.subplots(figsize=(10, 6))
+            colors = plt.cm.plasma(np.linspace(0, 1, len(datasets)))
+            T_ref = 300.0
+            fit_params = report['parameters']
+            
+            for idx, (v_data, i_data, T) in enumerate(datasets):
+                c = colors[idx]
+                ax.semilogy(v_data, i_data, 'o', alpha=0.4, color=c, label=f'{T}K Data')
                 
-                fig, ax = plt.subplots(figsize=(10, 5))
-                ax.semilogy(df['V'], df['I'], 'o', alpha=0.5, label='Data')
-                I_fit = model.compute_current(df['V'].values, report['parameters'])
-                ax.semilogy(df['V'], I_fit, 'r-', label='Fit')
-                ax.set_xlabel("Voltage [V]")
-                ax.set_ylabel("Current [A]")
-                ax.legend()
-                st.pyplot(fig)
+                # Compute local fit curve
+                Is_T = fit_params['I_s'] * (T / T_ref)**3 * np.exp(((fit_params['Eg'] * q_e) / k_B) * (1/T_ref - 1/T))
+                p_local = {'I_s': Is_T, 'n': fit_params['n'], 'R_s': fit_params['R_s']}
+                i_fit = model.compute_current(v_data, p_local, T=T)
+                ax.semilogy(v_data, i_fit, '-', color=c, label=f'{T}K Fit')
+            
+            ax.set_xlabel("Voltage [V]")
+            ax.set_ylabel("Current [A]")
+            ax.set_title("Temperature-Dependent Diode Fit")
+            ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+            st.pyplot(fig)
+        
+        else:
+            df_res = result['df']
+            fig, ax = plt.subplots(figsize=(10, 5))
+            ax.semilogy(df_res['V'], df_res['I'], 'o', alpha=0.5, label='Data')
+            I_fit = model.compute_current(df_res['V'].values, report['parameters'])
+            ax.semilogy(df_res['V'], I_fit, 'r-', label='Fit')
+            ax.set_xlabel("Voltage [V]")
+            ax.set_ylabel("Current [A]")
+            ax.legend()
+            st.pyplot(fig)
+            
+        st.divider()
+        st.subheader("Diode Physics & Characteristics")
+        
+        tab1, tab2 = st.tabs(["Physical Junction State", "3D Characteristics Surface"])
+        
+        with tab1:
+            st.markdown("### Physical Junction State")
+            v_min = 0.0
+            v_max = 1.0
+            
+            if result['type'] == 'single':
+                v_min = float(result['df']['V'].min())
+                v_max = float(result['df']['V'].max())
+            elif result['type'] == 'multi':
+                all_v = np.concatenate([d[0] for d in result['datasets']])
+                v_min = float(all_v.min())
+                v_max = float(all_v.max())
+            
+            v_col1, v_col2 = st.columns(2)
+            with v_col1:
+                vis_v = st.slider("Bias Voltage ($V$)", min_value=(v_min - 0.5), max_value=(v_max + 0.5), value=v_min, format="%.2f")
+                
+            with v_col2:
+                fig_struct, ax_struct = plt.subplots(figsize=(5, 3))
+                draw_diode_cross(ax_struct, report['parameters'], v_bias=vis_v)
+                st.pyplot(fig_struct)
+                
+        with tab2:
+            if result['type'] == 'single':
+                v_max = float(result['df']['V'].max())
+                t_min, t_max = 280, 340
+            else:
+                v = np.concatenate([d[0] for d in result['datasets']])
+                v_max = float(v.max())
+                t = [d[2] for d in result['datasets']]
+                t_min, t_max = float(min(t)), float(max(t))
+                
+            fig = plot_3d_diode(model, report['parameters'], v_max, t_min, t_max)
+            st.plotly_chart(fig, width='stretch')
 
 elif device_type == "MOSFET": # MOSFET logic
     st.header("MOSFET Extraction")
@@ -257,7 +298,7 @@ elif device_type == "MOSFET": # MOSFET logic
             g_kn = st.number_input("Guess $k_{n}$", value=1e-4, format="%.2e")
 
         if fit_mode == "Multi-Curve": # detect how many unique family curves exist within CSV
-            st.info(f"Detected {df['V_gs'].nunique()} unique V_gs curves for global fit.")
+            st.info(f"Detected {df['V_gs'].nunique()} unique $V_{{gs}}$ curves for global fit.")
             
             if st.button("Run Global Extraction", type="primary"):
                 model = MOSFETModel()
