@@ -10,6 +10,7 @@ sys.path.append(os.getcwd())
 from src.models import DiodeModel, MOSFETModel
 from src.extraction import ModelExtractor
 from src.utils import generate_spice_model
+from src.visualization import draw_mosfet_cross, plot_3d_fet_surface
 
 st.set_page_config(page_title="Compact Model Extractor", layout="wide") # set browser tab title and layout format
 st.title("Compact Model Parameter Extractor") # display main heading of app
@@ -86,11 +87,11 @@ if device_type == "Diode": # Diode logic
         df = None
         
         if source == "Synthetic": # generate synthetic data
-            true_Is = st.number_input("True I_s (A)", value=1e-10, format="%.2e")
+            true_Is = st.number_input("True $I_{s}$ (A)", value=1e-10, format="%.2e")
             true_n = st.number_input("True n", value=1.5)
-            true_Rs = st.number_input("True R_s (Ω)", value=2.5)
+            true_Rs = st.number_input("True $R_{s}$ (Ω)", value=2.5)
             if fit_mode == "Multi-Temperature":
-                true_Eg = st.number_input("True E_g (eV)", value=1.12)
+                true_Eg = st.number_input("True $E_{g}$ (eV)", value=1.12)
                 df, model = generate_synthetic_diode_multitemp(true_Is, true_n, true_Rs, true_Eg)
             else:
                 df, model = generate_synthetic_diode(true_Is, true_n, true_Rs)
@@ -119,11 +120,11 @@ if device_type == "Diode": # Diode logic
         with col1:
             st.divider()
             st.markdown("**Initial Guesses**") # input widget for initial param guesses
-            g_Is = st.number_input("Guess I_s", value=1e-12, format="%.2e")
+            g_Is = st.number_input("Guess $I_{s}$", value=1e-12, format="%.2e")
             g_n = st.number_input("Guess n", value=1.0)
-            g_Rs = st.number_input("Guess R_s", value=0.1)
+            g_Rs = st.number_input("Guess $R_{s}$ (Ω)", value=0.1)
             if fit_mode == "Multi-Temperature": # allow for initial Eg guess if using multi-temp diode data
-                g_Eg = st.number_input("Guess E_g (eV)", value=1.1)
+                g_Eg = st.number_input("Guess $E_{g}$ (eV)", value=1.1)
                 
             run_btn = st.button("Run Extraction", type="primary")
             
@@ -177,7 +178,7 @@ if device_type == "Diode": # Diode logic
                 
                 ax.set_xlabel("Voltage [V]")
                 ax.set_ylabel("Current [A]")
-                ax.set_title("Global Diode Fit (Temperature Dependence)")
+                ax.set_title("Temperature-Dependent Diode Fit")
                 ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
                 st.pyplot(fig)
                 
@@ -219,12 +220,12 @@ elif device_type == "MOSFET": # MOSFET logic
         df = None
         
         if source == "Synthetic":
-            true_Vth = st.number_input("True V_th (V)", value=0.7)
-            true_kn = st.number_input("True n", value=1e-3, format="%.2e")
-            true_lam = st.number_input("True lambda", value=0.02)
-            synth_type = st.radio("Synthetic Data Type", ["Transfer Curve (Id-Vgs)", "Output Family (Id-Vds)"])
+            true_Vth = st.number_input("True $V_{th}$ (V)", value=0.7)
+            true_kn = st.number_input("True $k_{n}$", value=1e-3, format="%.2e")
+            true_lam = st.number_input("True $\lambda$", value=0.02)
+            synth_type = st.radio("Synthetic Data Type", ["Transfer Curve ($I_{d}-V_{gs}$)", "Output Family ($I_{d}-V_{ds}$)"])
             
-            if synth_type == "Transfer Curve (Id-Vgs)":
+            if synth_type == "Transfer Curve ($I_{d}-V_{gs}$)":
                 df, model = generate_synthetic_mosfet(true_Vth, true_kn, true_lam)
             else:
                 df, model = generate_synthetic_mosfet_family(true_Vth, true_kn, true_lam, V_gs=[1.5, 2.0, 2.5, 3.0])
@@ -239,23 +240,23 @@ elif device_type == "MOSFET": # MOSFET logic
                 vd_idx = 1 if len(cols) > 1 else 0
                 id_idx = 2 if len(cols) > 2 else 0
                 
-                vg_col = st.selectbox("V_gs Column", cols, index=vg_idx)
-                vd_col = st.selectbox("V_ds Column", cols, index=vd_idx)
-                id_col = st.selectbox("I_d Column", cols, index=id_idx)
+                vg_col = st.selectbox("$V_{gs}$ Column", cols, index=vg_idx)
+                vd_col = st.selectbox("$V_{ds}$ Column", cols, index=vd_idx)
+                id_col = st.selectbox("$I_{d}$ Column", cols, index=id_idx)
                 
                 df = df.rename(columns={vg_col: 'V_gs', id_col: 'I_d', vd_col: 'V_ds'})
                 
     if df is not None:
         st.subheader("Configuration")
-        fit_mode = st.radio("Fit Mode", ["Single Curve", "Multi-Curve (Output Family)"])
+        fit_mode = st.radio("Fit Mode", ["Single Curve", "Multi-Curve"])
         
         with col1:
             st.divider()
             st.markdown("**Initial Guesses**")
-            g_Vth = st.number_input("Guess V_th", value=0.5)
-            g_kn = st.number_input("Guess k_n", value=1e-4, format="%.2e")
+            g_Vth = st.number_input("Guess $V_{th}$", value=0.5)
+            g_kn = st.number_input("Guess $k_{n}$", value=1e-4, format="%.2e")
 
-        if fit_mode == "Multi-Curve (Output Family)": # detect how many unique family curves exist within CSV
+        if fit_mode == "Multi-Curve": # detect how many unique family curves exist within CSV
             st.info(f"Detected {df['V_gs'].nunique()} unique V_gs curves for global fit.")
             
             if st.button("Run Global Extraction", type="primary"):
@@ -271,51 +272,19 @@ elif device_type == "MOSFET": # MOSFET logic
                 
                 report = extractor.multi_mosfet_fit(datasets, initial_params=initial)
                 
-                st.success("Global Extraction Converged")
-                m1, m2, m3 = st.columns(3)
-                m1.metric('V_th', f"{report['parameters']['V_th']:.4f} V")
-                m2.metric('k_n', f"{report['parameters']['k_n']:.2e}")
-                m3.metric('lambda', f"{report['parameters']['lam']:.4f}")
-                
-                st.divider()
-                st.subheader("SPICE Model")
-                spice_str = generate_spice_model(report['parameters'], "MOSFET", model_name="Multicurve_FET")
-                st.code(spice_str, language='spice')
-                
-                st.download_button(
-                    label="Download Model File",
-                    data=spice_str,
-                    file_name="mosfet_model.lib",
-                    mime="text/plain"
-                )
-                
-                fig, ax = plt.subplots(figsize=(10, 6))
-                colors = plt.cm.jet(np.linspace(0, 1, len(datasets)))
-                
-                for idx, (vds_data, id_data, vgs_val) in enumerate(datasets):
-                    c = colors[idx]
-                    ax.plot(vds_data, id_data, 'o', alpha=0.4, color=c, label=f'Data {vgs_val}V')
-                    
-                    p = report['parameters'].copy()
-                    p['V_ds'] = vds_data
-                    vgs_arr = np.full_like(vds_data, vgs_val)
-                    I_fit = model.compute_current(vgs_arr, p)
-                    
-                    ax.plot(vds_data, I_fit, '-', color=c, label=f'Fit {vgs_val}V')
-                
-                ax.set_xlabel("V_ds [V]")
-                ax.set_ylabel("I_d [A]")
-                ax.set_title("Global Fit: Output Characteristics")
-                ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
-                st.pyplot(fig)
-
+                st.session_state['mosfet_result'] = {
+                    'type': 'multi',
+                    'report': report,
+                    'datasets': datasets,
+                    'model': model
+                }
         else: # Single Curve Mode
-            sweep_type = st.radio("Sweep Type", ["Id-Vgs (Transfer)", "Id-Vds (Output)"])
+            sweep_type = st.radio("Sweep Type", ["$I_{d}-V_{gs}$ (Transfer)", "$I_{d}-V_{ds}$ (Output)"])
             
             subset = None
             sel_param = 0.0
             
-            if sweep_type == "Id-Vgs (Transfer)":
+            if sweep_type == "$I_{d}-V_{gs}$ (Transfer)":
                 params = df['V_ds'].unique()
                 sel_param = params[0]
                 if len(params) > 1:
@@ -334,7 +303,7 @@ elif device_type == "MOSFET": # MOSFET logic
                 extractor = ModelExtractor(model)
                 initial = {'V_th': g_Vth, 'k_n': g_kn, 'lam': 0.0}
                 
-                if sweep_type == "Id-Vgs (Transfer)":
+                if sweep_type == "$I_{d}-V_{gs}$ (Transfer)":
                      v_gs_arg = subset['V_gs'].values
                      v_ds_arg = float(sel_param)
                 else:
@@ -348,41 +317,109 @@ elif device_type == "MOSFET": # MOSFET logic
                     initial_params=initial
                 )
                 
-                st.success("Extraction Converged")
-                m1, m2, m3 = st.columns(3)
-                m1.metric('V_th', f"{report['parameters']['V_th']:.4f} V")
-                m2.metric('k_n', f"{report['parameters']['k_n']:.2e}")
-                m3.metric('lambda', f"{report['parameters']['lam']:.4f}")
+                st.session_state['mosfet_result'] = {
+                    'type': 'single',
+                    'report': report,
+                    'subset': subset,
+                    'sweep_type': sweep_type,
+                    'v_ds_arg': v_ds_arg,
+                    'v_gs_arg': v_gs_arg,
+                    'sel_param': sel_param,
+                    'model': model
+                }
+
+    # Render results from session state
+    if 'mosfet_result' in st.session_state:
+        result = st.session_state['mosfet_result']
+        report = result['report']
+        model = MOSFETModel()
+
+        st.success("Extraction Converged")
+        m1, m2, m3 = st.columns(3)
+        m1.metric('V_th', f"{report['parameters']['V_th']:.4f} V")
+        m2.metric('k_n', f"{report['parameters']['k_n']:.2e}")
+        m3.metric('lambda', f"{report['parameters']['lam']:.4f}")
+        
+        st.divider()
+        st.subheader("SPICE Model")
+        spice_str = generate_spice_model(report['parameters'], "MOSFET", model_name="MOS_Model")
+        st.code(spice_str, language='spice')
+        
+        st.download_button(
+            label="Download Model File",
+            data=spice_str,
+            file_name="mosfet_model.lib",
+            mime="text/plain"
+        )
+        
+        if result['type'] == 'multi':
+            fig, ax = plt.subplots(figsize=(10, 6))
+            datasets = result['datasets']
+            colors = plt.cm.jet(np.linspace(0, 1, len(datasets)))
+            
+            for idx, (vds_data, id_data, vgs_val) in enumerate(datasets):
+                c = colors[idx]
+                ax.plot(vds_data, id_data, 'o', alpha=0.4, color=c, label=f'Data {vgs_val}V')
                 
-                st.divider()
-                st.subheader("SPICE Model")
-                spice_str = generate_spice_model(report['parameters'], "MOSFET", model_name="Singlecurve_FET")
-                st.code(spice_str, language='spice')
+                p = report['parameters'].copy()
+                p['V_ds'] = vds_data
+                vgs_arr = np.full_like(vds_data, vgs_val)
+                I_fit = model.compute_current(vgs_arr, p)
                 
-                st.download_button(
-                    label="Download Model File",
-                    data=spice_str,
-                    file_name="mosfet_model.lib",
-                    mime="text/plain"
-                )
+                ax.plot(vds_data, I_fit, '-', color=c, label=f'Fit {vgs_val}V')
+            
+            ax.set_xlabel("$V_{ds}$ [V]")
+            ax.set_ylabel("$I_{d}$ [A]")
+            ax.set_title("Global Fit: Output Characteristics")
+            ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+            st.pyplot(fig)
+            
+        elif result['type'] == 'single':
+            fig, ax = plt.subplots(figsize=(10, 5))
+            subset = result['subset']
+            sweep_type = result['sweep_type']
+            v_ds_arg = result['v_ds_arg']
+            v_gs_arg = result['v_gs_arg']
+            
+            if sweep_type == "$I_{d}-V_{gs}$ (Transfer)":
+                x_data = subset['V_gs']
+                x_label = "$V_{gs}$ [V]"
+            else:
+                x_data = subset['V_ds']
+                x_label = "$V_{ds}$ [V]"
                 
-                fig, ax = plt.subplots(figsize=(10, 5))
+            ax.plot(x_data, subset['I_d'], 'o', alpha=0.5, label='Data')
+            
+            fit_params = report['parameters']
+            fit_params['V_ds'] = v_ds_arg
+            I_fit = model.compute_current(v_gs_arg, fit_params)
+            
+            ax.plot(x_data, I_fit, 'r-', label='Fit')
+            ax.set_xlabel(x_label)
+            ax.set_ylabel('$I_{d}$ [A]')
+            ax.legend()
+            st.pyplot(fig)
+
+        st.divider()
+        st.subheader("MOSFET Physics & Characteristics")
+        
+        tab1, tab2 = st.tabs(["Physical Channel State", "3D Characteristics Surface"])
+        
+        with tab1:
+            st.markdown("### Physical Channel State")
+            v_col1, v_col2 = st.columns(2)
+            with v_col1:
+                vis_vgs = st.slider("Gate-to-Source Voltage ($V_{gs}$)", 0.0, 5.0, 1.0)
+                vis_vds = st.slider("Drain-to-Source Voltage ($V_{ds}$)", 0.0, 5.0, 0.5)
                 
-                if sweep_type == "Id-Vgs (Transfer)":
-                    x_data = subset['V_gs']
-                    x_label = "V_gs [V]"
-                else:
-                    x_data = subset['V_ds']
-                    x_label = "V_ds [V]"
-                    
-                ax.plot(x_data, subset['I_d'], 'o', alpha=0.5, label='Data')
+            with v_col2:
+                fig_struct, ax_struct = plt.subplots(figsize=(5, 3))
+                draw_mosfet_cross(ax_struct, report['parameters'], vgs=vis_vgs, vds=vis_vds)
+                st.pyplot(fig_struct)
                 
-                fit_params = report['parameters']
-                fit_params['V_ds'] = v_ds_arg
-                I_fit = model.compute_current(v_gs_arg, fit_params)
-                
-                ax.plot(x_data, I_fit, 'r-', label='Fit')
-                ax.set_xlabel(x_label)
-                ax.set_ylabel('I_d [A]')
-                ax.legend()
-                st.pyplot(fig)
+        with tab2:
+            vgs_max = df['V_gs'].max() if df is not None else 5.0
+            vds_max = df['V_ds'].max() if df is not None else 5.0
+            fig = plot_3d_fet_surface(model, report['parameters'], vgs_max, vds_max)
+            st.plotly_chart(fig, width='stretch')
+            

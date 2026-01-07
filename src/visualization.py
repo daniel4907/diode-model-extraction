@@ -1,5 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.patches as patches
+import plotly.graph_objects as go
 
 def plot_diode_fit(V_data, I_data, model, fitted_params, filename=None, temps=None):
     """
@@ -133,14 +135,14 @@ def plot_mosfet_fit(V_gs, I_data, model, fitted_params, filename=None, yscale='l
     if yscale == 'log':
         plt.semilogy(V_gs, I_data, label='Original data')
         plt.semilogy(V_gs, I_fit, label='Fitted data')
-        plt.title('Id-Vgs curve on semilog scale')
+        plt.title('$I_{d}-V_{gs}$ curve on semilog scale')
     else:
         plt.plot(V_gs, I_data, label='Original_data')
         plt.plot(V_gs, I_fit, label='Fitted data')
-        plt.title('Id-Vgs curve on linear scale')
+        plt.title('$I_{d}-V_{gs}$ curve on linear scale')
     
-    plt.xlabel("V_gs [V]")
-    plt.ylabel("I_d [A]")
+    plt.xlabel("$V_{gs}$ [V]")
+    plt.ylabel("$I_{d}$ [A]")
     plt.legend()
     
     if filename is not None:
@@ -166,13 +168,86 @@ def plot_mosfet_multi(V_ds, I_data, model, fitted_params, V_gs_label=None, filen
     plt.semilogy(V_ds, I_fit, label='Fitted data')
     
     if V_gs_label is not None:
-        plt.title(f"Id-Vd at V_gs = {V_gs_label} V")
+        plt.title(f"$I_{{d}}$-$V_{{ds}}$ at $V_{{gs}}$ = {V_gs_label} V")
     
-    plt.xlabel("V_ds [V]")
-    plt.ylabel("I_d [A]")
+    plt.xlabel("$V_{ds}$ [V]")
+    plt.ylabel("$I_{d}$ [A]")
     plt.legend()
     
     if filename is not None:
         plt.savefig(filename, dpi=300, bbox_inches='tight')
         
     plt.show()
+    
+def draw_mosfet_cross(ax, params, vgs=0, vds=0):
+    """
+    Draw cross-section of MOSFET
+    """
+    ax.clear()
+    ax.set_xlim(-0.5, 3.5)
+    ax.set_ylim(-1.0, 2.0)
+    ax.axis('off')
+    ax.set_title(f"NMOS State ($V_{{gs}}$={vgs} V, $V_{{ds}}$={vds} V)") # double curly brackets so python doesn't get confused with f-strings
+    
+    body = patches.Rectangle((0, -0.8), 3, 0.8, linewidth=1, edgecolor='black', facecolor='#e0e0e0')
+    source = patches.Rectangle((0.2, -0.2), 0.6, 0.4, edgecolor='black', facecolor='#4da6ff')
+    drain = patches.Rectangle((2.2, -0.2), 0.6, 0.4, edgecolor='black', facecolor='#4da6ff')
+    oxide = patches.Rectangle((0.8, 0), 1.4, 0.1, edgecolor='black', facecolor='#ffff99')
+    gate = patches.Rectangle((0.8, 0.1), 1.4, 0.3, edgecolor='black', facecolor='#ff6666')
+    ax.add_patch(body)
+    ax.add_patch(source)
+    ax.add_patch(drain)
+    ax.add_patch(oxide)
+    ax.add_patch(gate)
+    ax.text(1.5, -0.4, 'p-Si Substrate', ha='center', fontsize=8)
+    ax.text(0.5, -0.1, 'Source', ha='center', color='white', fontsize=8, fontweight='bold')
+    ax.text(2.5, -0.1, 'Drain', ha='center', color='white', fontsize=8, fontweight='bold')
+    ax.text(1.5, 0.25, 'Gate', ha='center', color='white', fontsize=8, fontweight='bold')
+    
+    vth = params.get('V_th', 0.7)
+    if vgs > vth: # if there is a channel
+        channel_color = '#4da6ff'
+        depth_source = 0.15
+        
+        if vds >= (vgs - vth): # saturation, find pinch off
+            depth_drain = 0.01
+            channel_poly = patches.Polygon([(0.8, 0), (2.2, 0), (2.2, -depth_drain), (0.8, -depth_source)], facecolor=channel_color, alpha=0.8)
+            ax.text(1.5, -1.2, 'Saturation', ha='center', color='green', fontsize=10)
+        else: # continuous channel
+            r = 1 - (vds / (vgs - vth + 0.1))
+            depth_drain = max(0.05, depth_source * r)
+            channel_poly = patches.Polygon([(0.8, 0), (2.2, 0), (2.2, -depth_drain), (0.8, -depth_source)], facecolor=channel_color, alpha = 0.8)
+            ax.text(1.5, -1.2, 'Triode/Linear', ha='center', color='green', fontsize=10)
+            
+        ax.add_patch(channel_poly)
+    else:
+        ax.text(1.5, -1.2, 'Cutoff', ha='center', color='green', fontsize=10)
+        
+def plot_3d_fet_surface(model, params, vgs_max=5.0, vds_max=5.0):
+    """
+    Plots 3D surface plot of drain current against gate-to-source and drain-to-source current
+    """
+    fig = plt.figure(figsize=(10, 7))
+    vgs = np.linspace(0, vgs_max, 30)
+    vds = np.linspace(0, vds_max, 30)
+    Vgs, Vds = np.meshgrid(vgs, vds)
+    Id = np.zeros_like(Vgs)
+    
+    for i in range(Vgs.shape[0]):
+        for j in range(Vds.shape[0]):
+            local_params = params.copy()
+            local_params['V_ds'] = Vds[i, j]
+            Id[i, j] = model.compute_current([Vgs[i, j]], local_params)[0]
+    
+    fig = go.Figure(data=[go.Surface(z=Id, x=vgs, y=vds, colorscale='Viridis')])
+    fig.update_layout(
+        title='3D Characteristics Surface',
+        scene=dict(
+            xaxis_title='V<sub>gs</sub> [V]', # need to use html formatting for plotly
+            yaxis_title='V<sub>ds</sub> [V]',
+            zaxis_title='I<sub>d</sub> [A]'
+        ),
+        margin=dict(l=0, r=0, b=0, t=40)
+    )
+    
+    return fig
