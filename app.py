@@ -9,6 +9,7 @@ sys.path.append(os.getcwd())
 
 from src.models import DiodeModel, MOSFETModel
 from src.extraction import ModelExtractor
+from src.utils import generate_spice_model
 
 st.set_page_config(page_title="Compact Model Extractor", layout="wide") # set browser tab title and layout format
 st.title("Compact Model Parameter Extractor") # display main heading of app
@@ -56,6 +57,25 @@ def generate_synthetic_mosfet(V_th=0.7, k_n=1e-3, lam=0.02, V_ds=1.0, points=50,
     np.random.seed(67)
     I_noise = I_true * (1 + np.random.normal(0, noise, size=I_true.shape))
     return pd.DataFrame({'V_gs': V_gs, 'I_d': I_noise, 'V_ds': V_ds}), model
+
+def generate_synthetic_mosfet_family(V_th=0.7, k_n=1e-3, lam=0.02, V_gs=[1.0, 1.5, 2.0, 2.5], points=50, noise=0.02):
+    """
+    Function to generate synthetic MOSFET family curves given user-input parameterss
+    """
+    model = MOSFETModel()
+    data = []
+    V_ds = np.linspace(0, 5.0, points)
+    np.random.seed(4321)
+    for vgs in V_gs:
+        vgs_array = np.full_like(V_ds, vgs)
+        params = {'V_th': V_th, 'k_n': k_n, 'lam': lam, 'V_ds': V_ds}
+        I_true = model.compute_current(vgs_array, params)
+        I_noise = I_true * (1 + np.random.normal(0, noise, size=I_true.shape))
+        
+        for vds, id in zip(V_ds, I_noise):
+            data.append({'V_gs': vgs, 'V_ds': vds, 'I_d': id})
+            
+    return pd.DataFrame(data), model
 
 if device_type == "Diode": # Diode logic
     st.header("Diode Extraction")
@@ -128,6 +148,18 @@ if device_type == "Diode": # Diode logic
                 m3.metric('n', f"{report['parameters']['n']:.4f}")
                 m4.metric('R_s', f"{report['parameters']['R_s']:.4f} Ω")
                 
+                st.divider()
+                st.subheader("SPICE Model")
+                spice_str = generate_spice_model(report['parameters'], "diode", model_name="Multitemp_Diode")
+                st.code(spice_str, language='spice')
+                
+                st.download_button(
+                    label="Download Model File",
+                    data=spice_str,
+                    file_name="diode_model.lib",
+                    mime="text/plain"
+                )
+                
                 fig, ax = plt.subplots(figsize=(10, 6))
                 colors = plt.cm.plasma(np.linspace(0, 1, len(datasets)))
                 T_ref = 300.0
@@ -158,6 +190,18 @@ if device_type == "Diode": # Diode logic
                 m2.metric('n', f"{report['parameters']['n']:.4f}")
                 m3.metric('R_s', f"{report['parameters']['R_s']:.4f} Ω")
                 
+                st.divider()
+                st.subheader("SPICE Model")
+                spice_str = generate_spice_model(report['parameters'], "diode", model_name="Singletemp_Diode")
+                st.code(spice_str, language='spice')
+                
+                st.download_button(
+                    label="Download Model File",
+                    data=spice_str,
+                    file_name="diode_model.lib",
+                    mime="text/plain"
+                )
+                
                 fig, ax = plt.subplots(figsize=(10, 5))
                 ax.semilogy(df['V'], df['I'], 'o', alpha=0.5, label='Data')
                 I_fit = model.compute_current(df['V'].values, report['parameters'])
@@ -178,7 +222,12 @@ elif device_type == "MOSFET": # MOSFET logic
             true_Vth = st.number_input("True V_th (V)", value=0.7)
             true_kn = st.number_input("True n", value=1e-3, format="%.2e")
             true_lam = st.number_input("True lambda", value=0.02)
-            df, model = generate_synthetic_mosfet(true_Vth, true_kn, true_lam)
+            synth_type = st.radio("Synthetic Data Type", ["Transfer Curve (Id-Vgs)", "Output Family (Id-Vds)"])
+            
+            if synth_type == "Transfer Curve (Id-Vgs)":
+                df, model = generate_synthetic_mosfet(true_Vth, true_kn, true_lam)
+            else:
+                df, model = generate_synthetic_mosfet_family(true_Vth, true_kn, true_lam, V_gs=[1.5, 2.0, 2.5, 3.0])
             
         else:
             csv = st.file_uploader("Upload CSV", type=['csv'], key="csv_mosfet")
@@ -227,6 +276,18 @@ elif device_type == "MOSFET": # MOSFET logic
                 m1.metric('V_th', f"{report['parameters']['V_th']:.4f} V")
                 m2.metric('k_n', f"{report['parameters']['k_n']:.2e}")
                 m3.metric('lambda', f"{report['parameters']['lam']:.4f}")
+                
+                st.divider()
+                st.subheader("SPICE Model")
+                spice_str = generate_spice_model(report['parameters'], "MOSFET", model_name="Multicurve_FET")
+                st.code(spice_str, language='spice')
+                
+                st.download_button(
+                    label="Download Model File",
+                    data=spice_str,
+                    file_name="mosfet_model.lib",
+                    mime="text/plain"
+                )
                 
                 fig, ax = plt.subplots(figsize=(10, 6))
                 colors = plt.cm.jet(np.linspace(0, 1, len(datasets)))
@@ -292,6 +353,18 @@ elif device_type == "MOSFET": # MOSFET logic
                 m1.metric('V_th', f"{report['parameters']['V_th']:.4f} V")
                 m2.metric('k_n', f"{report['parameters']['k_n']:.2e}")
                 m3.metric('lambda', f"{report['parameters']['lam']:.4f}")
+                
+                st.divider()
+                st.subheader("SPICE Model")
+                spice_str = generate_spice_model(report['parameters'], "MOSFET", model_name="Singlecurve_FET")
+                st.code(spice_str, language='spice')
+                
+                st.download_button(
+                    label="Download Model File",
+                    data=spice_str,
+                    file_name="mosfet_model.lib",
+                    mime="text/plain"
+                )
                 
                 fig, ax = plt.subplots(figsize=(10, 5))
                 

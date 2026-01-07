@@ -90,3 +90,38 @@ def generate_multi_mosfet_csv(filepath, params, vgs_list, vds_sweep):
             
     df = pd.DataFrame(data)
     df.to_csv(filepath, index=False)
+    
+def generate_spice_model(params, device_type, model_name='DUT'):
+    """
+    Generates a SPICE .MODEL from the extracted parameters
+
+    Args:
+        params (dict): extracted device parameters
+        device_type (str): 'diode' or 'MOSFET' to define .MODEL device type 
+        model_name (str, optional): optional name of the model, defaults to 'DUT'
+    
+    Returns:
+        str: Formatted SPICE model string
+    """
+    if device_type == 'diode':
+        I_s = params.get('I_s', 1e-14)
+        n = params.get('n', 1.0)
+        R_s = params.get('R_s', 0.0)
+        
+        param_str = f"I_s={I_s:.5e} n={n:.4f} R_s={R_s:.4f}"
+        
+        if 'Eg' in params:
+            param_str += f" Eg={params['Eg']:.4f}"
+            
+        return f".MODEL {model_name} D({param_str})\n"
+
+    elif device_type == 'MOSFET':
+        V_th = params.get('V_th', 0.7)
+        k_n = params.get('k_n', 1e-4)
+        lam = params.get('lam', 0.0)
+        
+        param_str = f"LEVEL=1 VTO={V_th:.4f} KP={k_n:.5e} LAMBDA={lam:.4f}"
+        
+        return f".MODEL {model_name} D({param_str})\n"
+    
+    return ""
