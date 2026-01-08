@@ -273,23 +273,32 @@ if device_type == "Diode": # Diode logic
             w, xp, xn = phys.get_dep_width(v_bias)
             
             st.divider()
-            st.subheader("Key Metrics & Physics")
-            st.metric("Built-in Potential ($V_{bi}$)", f"{v_bi:.3f} V")
-            st.latex(r"V_{bi} = V_T \ln\left(\frac{N_A N_D}{n_i^2}\right)")
-            st.metric("Depletion Width ($W$)", f"{w*1e4:.3f} μm")
-            st.latex(r"W = \sqrt{\frac{2 \epsilon_s}{q} \left(\frac{1}{N_A} + \frac{1}{N_D}\right) (V_{bi} - V_{bias})}")
-            st.metric("Energy Bandgap ($E_g$)", f"{phys.Eg:.3f} eV")
-            st.latex(r"E_g(T) = 1.17 - \frac{4.73 \cdot 10^{-4} T^2}{T + 636}")
+            st.subheader("Key Metrics")
+            
+            c1, c2 = st.columns(2)
+            with c1:
+                st.metric("Built-in Potential ($V_{bi}$)", f"{v_bi:.3f} V")
+                st.latex(r"V_{bi} = V_T \ln\left(\frac{N_A N_D}{n_i^2}\right)")
+                st.metric("Thermal Voltage ($V_T$)", f"{phys.Vt*1e3:.1f} mV")
+                st.latex(r"V_T = \frac{k_B T}{q}")
+                st.metric("Energy Bandgap ($E_g$)", f"{phys.Eg:.3f} eV")
+                st.latex(r"E_g(T) = 1.17 - \frac{4.73 \cdot 10^{-4} T^2}{T + 636}")
+            
+            with c2:   
+                st.metric("Depletion Width ($W$)", f"{w*1e4:.3f} μm")
+                st.latex(r"W = \sqrt{\frac{2 \epsilon_s}{q} \left(\frac{1}{N_A} + \frac{1}{N_D}\right) (V_{bi} - V_{bias})}")
+                st.metric("Intrinsic Concentration ($n_i$)", f"{phys.ni:.2e} cm$^{{-3}}$")
+                st.latex(r"n_i = \sqrt{N_c N_v} e^{-E_g / 2k_B T}")
             
         with col2:
             st.subheader("Energy Band Diagram")
             
             if v_bias > 0:
-                st.info("**Forward Bias**: the applied voltage opposes the built-in potential, lowering the barrier and narrowing the depletion region. Minority carriers are injected across the junction.")
+                st.info("**Forward Bias**: the applied voltage opposes the built-in potential, lowering the energy barrier. This allows for majority carriers to diffuse across the junction, resulting in significant current flow ($I \propto e^{V/V_T}$).")
             elif v_bias < 0:
-                st.warning("**Reverse Bias**: the applied voltage adds to the built-in potential, raising the barrier and widening the depletion region. Current is blocked.")
+                st.warning("**Reverse Bias**: the applied voltage adds to the built-in potential, raising the energy barrier. The depletion region widens and only a small leakage current flows due to drift of minority carriers.")
             else:
-                st.success("**Equilibrium**: no net current flows, the Fermi level is constant throughout the device.")
+                st.success("**Equilibrium**: no net current flows, the Fermi level ($E_F$) is constant throughout the device.")
             
             limit = max(w * 2, 1e-4)
             x_grid = np.linspace(-limit, limit, 500)
@@ -537,21 +546,36 @@ elif device_type == "MOSFET": # MOSFET logic
             phi_s = phys.solve_surface_potential(vgs)
             
             st.divider()
-            st.metric("Threshold Voltage ($V_{th}$)", f"{phys.Vth:.3f} V")
-            st.latex(r"V_{th} = V_{fb} + 2\phi_f + \gamma\sqrt{2\phi_f}")
-            st.metric("Surface Potential ($\phi_s$)", f"{phi_s:.3f} V")
+            st.subheader("Key Metrics")
             
-            if vgs < -0.9:
-                st.info("State: **Accumulation**")
-            elif abs(phi_s) < 0.01:
-                st.info("State: **Flatband**")
-            elif phi_s < 2 * phys.phi_f:
-                st.warning("State: **Depletion**")
-            else:
-                st.success("State: **Inversion**")
+            c1, c2 = st.columns(2)
+            
+            with c1:
+                st.metric("Threshold Voltage ($V_{th}$)", f"{phys.Vth:.3f} V")
+                st.latex(r"V_{th} = V_{fb} + 2\phi_f + \gamma\sqrt{2\phi_f}\\V_{fb, Si} = -0.9V")
+                st.metric("Surface Potential ($\phi_s$)", f"{phi_s:.3f} V")
+                st.latex(r"\phi_s(Inv) \approx 2\phi_f")
+                st.metric("Oxide Capacitance ($C_{ox}$)", f"{phys.cox*1e6:.3f} μF/cm²")
+                st.latex(r"C_{ox} = \frac{\epsilon_{ox}}{t_{ox}}")
+                
+            with c2:
+                st.metric("Fermi Potential ($\phi_f$)", f"{phys.phi_f:.3f} V")
+                st.latex(r"\phi_f = V_T \ln\left(\frac{N_A}{n_i}\right)")
+                st.metric("Body Effect ($\gamma$)", f"{phys.gamma:.3f} sqrt(V)")
+                st.latex(r"\gamma = \frac{\sqrt{2 q \epsilon_{si} N_A}}{C_{ox}}")
                 
         with col2:
             st.subheader("MOS Band Diagram")
+            
+            if vgs < -0.9:
+                st.info("**Accumulation**: when $V_{gs} < V_{fb}$, majority carriers are attracted to the oxide-semiconductor interface, causing the valence bend to bend upward closer to the Fermi level.")
+            elif abs(phi_s) < 0.01:
+                st.info("**Flatband**: The gate voltage compensates for the work function difference, leading to the energy bands being flats and there being no net charge in the semiconductor.")
+            elif phi_s < 2 * phys.phi_f:
+                st.warning("**Depletion**: $V_{gs} > V_{fb}$, so majority carriers are repeled from the surface and leave behind immobile negative acceptor ions. The bands bend downward, depleting the surface of mobile carriers. Even though eventually an electron inversion layer appears, we are still not in an inversion state yet and instead are in 'weak inversion'.")
+            else:
+                st.success("**Inversion**: $V_{gs} > V_{th}$, so the bands bend significantly downward such that the intrinsic level $E_{i}$ crosses the Fermi level, causing the minority carriers to gather at the surface and form a conductive n-channel.")
+                
             x_grid = np.linspace(0, 1e-4, 500)
             band = phys.compute_band_diagrams(vgs, x_grid)
             fig = plot_mos_bands(band)
