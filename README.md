@@ -1,6 +1,6 @@
 # Compact Model Parameter Extraction Framework
 
-A Python framework for extracting semiconductor device compact model parameters from TCAD simulations, featuring interactive visualizations and Streamlit app dashboard.
+A Python framework for extracting semiconductor device compact model parameters from TCAD simulations, featuring interactive visualizations and Streamlit app dashboard.  
 [Streamlit deployed app to use framework without installing repo](https://compact-model-extraction.streamlit.app/)
 
 ## Current features:
@@ -54,5 +54,6 @@ Or, run the Jupyter notebooks found in ```/examples/``` directory.
 - `tests/` - unit tests
 - `examples/` - demonstration notebooks for model extraction
 - `app.py` - Streamlit GUI app
+
 
 
