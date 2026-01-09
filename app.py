@@ -21,9 +21,9 @@ device_type = st.sidebar.selectbox("Select Device Type", ["Diode", "MOSFET"]) # 
 if device_type == "Diode" or device_type == "MOSFET":
     app_mode = st.sidebar.radio("App Mode", ["Extraction", "Physics Explorer"])
 
-def generate_synthetic_diode(I_s=1e-10, n=1.5, R_s=2.5, points=50, noise=0.02):
+def generate_synthetic_diode_iv(I_s=1e-10, n=1.5, R_s=2.5, points=50, noise=0.02):
     """
-    Function to generate synthetic diode data given user-input parameters
+    Function to generate synthetic diode I-V data given user-input parameters
     """
     model = DiodeModel()
     V = np.linspace(0, 0.8, points)
@@ -33,9 +33,21 @@ def generate_synthetic_diode(I_s=1e-10, n=1.5, R_s=2.5, points=50, noise=0.02):
     I_noise = I_true * (1 + np.random.normal(0, noise, size=I_true.shape))
     return pd.DataFrame({'V': V, 'I': I_noise}), model
 
+def generate_synthetic_diode_cv(C_j=1e-12, V_bi=0.7, m=0.5, points=50, noise=0.02):
+    """
+    Function to generate synthetic diode C-V data given user-input parameters
+    """
+    model = DiodeModel()
+    V = np.linspace(-5, 0, points)
+    params = {'C_j': C_j, 'V_bi': V_bi, 'm': m}
+    C_true = model.compute_capacitance(V, params)
+    np.random.seed(1273)
+    C_noise = C_true * (1 + np.random.normal(0, noise, size=C_true.shape))
+    return pd.DataFrame({'V': V, 'C': C_noise}), model
+
 def generate_synthetic_diode_multitemp(I_s=1e-10, n=1.5, R_s=2.5, Eg=1.12, temps=[280, 300, 320, 340], points=50, noise=0.02):
     """
-    Function to generate multi-temperature synthetic diode data
+    Function to generate multi-temperature synthetic diode I-V data
     """
     model = DiodeModel()
     V_sweep = np.linspace(0, 0.8, points)
@@ -88,18 +100,26 @@ if device_type == "Diode": # Diode logic
         col1, col2 = st.columns([1, 2]) # split layout into vertical columns, 2nd column is twice as wide as 1st
         with col1: # context manager, commands inside rendered in first column
             source = st.radio("Data Source", ["Synthetic", "Upload CSV"])
-            fit_mode = st.radio("Fit Mode", ["Single Curve", "Multi-Temperature"])
+            fit_mode = st.radio("Fit Mode", ["I-V Curve", "Multi-Temperature I-V", "C-V Curve"])
             df = None
             
             if source == "Synthetic": # generate synthetic data
-                true_Is = st.number_input("True $I_{s}$ (A)", value=1e-10, format="%.2e")
-                true_n = st.number_input("True n", value=1.5)
-                true_Rs = st.number_input("True $R_{s}$ (Ω)", value=2.5)
-                if fit_mode == "Multi-Temperature":
+                if fit_mode == "C-V Curve":
+                    true_Cj = st.number_input("True $C_{j}$ (F)", value=1e-12, format="%.2e")
+                    true_Vbi = st.number_input("True $V_{bi}$ (V)", value=0.7)
+                    true_m = st.number_input("True m", value=0.5)
+                    df, model = generate_synthetic_diode_cv(true_Cj, true_Vbi, true_m)
+                elif fit_mode == "Multi-Temperature I-V":
+                    true_Is = st.number_input("True $I_{s}$ (A)", value=1e-10, format="%.2e")
+                    true_n = st.number_input("True n", value=1.5)
+                    true_Rs = st.number_input("True $R_{s}$ (Ω)", value=2.5)
                     true_Eg = st.number_input("True $E_{g}$ (eV)", value=1.12)
                     df, model = generate_synthetic_diode_multitemp(true_Is, true_n, true_Rs, true_Eg)
-                else:
-                    df, model = generate_synthetic_diode(true_Is, true_n, true_Rs)
+                else: # single temp diode I-V
+                    true_Is = st.number_input("True $I_{s}$ (A)", value=1e-10, format="%.2e")
+                    true_n = st.number_input("True n", value=1.5)
+                    true_Rs = st.number_input("True $R_{s}$ (Ω)", value=2.5)
+                    df, model = generate_synthetic_diode_iv(true_Is, true_n, true_Rs)
                 
             else:
                 # key is necessary for state management, when key is changed (csv_diode -> csv_mosfet), the previous widget is destroyed
@@ -108,13 +128,18 @@ if device_type == "Diode": # Diode logic
                     df = pd.read_csv(csv)
                     cols = df.columns.tolist() # column mapping logic
                     v_idx = 0
-                    i_idx = 1 if len(cols) > 1 else 0
-                    
                     v_col = st.selectbox("Voltage Column", cols, index=v_idx)
-                    i_col = st.selectbox("Current Column", cols, index=i_idx)
                     
-                    rename_dict = {v_col: 'V', i_col: 'I'}
-                    if fit_mode == "Multi-Temperature":
+                    if fit_mode == "C-V Curve":
+                        c_idx = 1 if len(cols) > 1 else 0
+                        c_col = st.selectbox("Capacitance Column", cols, index=c_idx)
+                        rename_dict = {v_col: 'V', c_col: 'C'}
+                    else:
+                        i_idx = 1 if len(cols) > 1 else 0
+                        i_col = st.selectbox("Current Column", cols, index=i_idx)
+                        rename_dict = {v_col: 'V', i_col: 'I'}
+                    
+                    if fit_mode == "Multi-Temperature I-V":
                         t_idx = 2 if len(cols) > 2 else 0
                         t_col = st.selectbox("Temperature Column", cols, index=t_idx)
                         rename_dict[t_col] = 'T'
@@ -125,13 +150,19 @@ if device_type == "Diode": # Diode logic
             with col1:
                 st.divider()
                 st.markdown("**Initial Guesses**") # input widget for initial param guesses
-                g_Is = st.number_input("Guess $I_{s}$", value=1e-12, format="%.2e")
-                g_n = st.number_input("Guess n", value=1.0)
-                g_Rs = st.number_input("Guess $R_{s}$ (Ω)", value=0.1)
-                if fit_mode == "Multi-Temperature": # allow for initial Eg guess if using multi-temp diode data
-                    g_Eg = st.number_input("Guess $E_{g}$ (eV)", value=1.1)
+                
+                if fit_mode == 'C-V Curve':
+                    g_Cj = st.number_input("Guess $C_j$", value=1e-12, format="%.2e")
+                    g_Vbi = st.number_input("Guess $V_{bi}$", value=0.7)
+                    g_m = st.number_input("Guess m", value=0.5)
                 else:
-                    g_Eg = 1.12 # prevents valueerrors
+                    g_Is = st.number_input("Guess $I_{s}$", value=1e-12, format="%.2e")
+                    g_n = st.number_input("Guess n", value=1.0)
+                    g_Rs = st.number_input("Guess $R_{s}$ (Ω)", value=0.1)
+                    if fit_mode == "Multi-Temperature I-V": # allow for initial Eg guess if using multi-temp diode data
+                        g_Eg = st.number_input("Guess $E_{g}$ (eV)", value=1.1)
+                    else:
+                        g_Eg = 1.12 # prevents valueerrors
                     
                 run_btn = st.button("Run Extraction", type="primary")
                 
@@ -139,7 +170,16 @@ if device_type == "Diode": # Diode logic
                 model = DiodeModel()
                 extractor = ModelExtractor(model)
                 
-                if fit_mode == "Multi-Temperature":
+                if fit_mode == 'C-V Curve':
+                    initial = {'C_j': g_Cj, 'V_bi': g_Vbi, 'm': g_m}
+                    report = extractor.diode_cv_fit(df['V'].values, df['C'].values, initial_params=initial)
+                    st.session_state['diode_result'] = {
+                        'type': 'cv',
+                        'report': report,
+                        'df': df,
+                        'model': model
+                    }
+                elif fit_mode == "Multi-Temperature I-V":
                     datasets = []
                     unique_temps = sorted(df['T'].unique())
                     for T in unique_temps:
@@ -174,7 +214,7 @@ if device_type == "Diode": # Diode logic
             
             st.divider()
             st.subheader("SPICE Model")
-            spice_str = generate_spice_model(report['parameters'], "diode", model_name="Multitemp_Diode")
+            spice_str = generate_spice_model(report['parameters'], "diode", model_name="Diode_Model")
             st.code(spice_str, language='spice')
             
             st.download_button(
@@ -184,7 +224,39 @@ if device_type == "Diode": # Diode logic
                 mime="text/plain"
             )
             
-            if result['type'] == 'multi':
+            if result['type'] == 'cv':
+                df_res = result['df']
+                st.pyplot(plot_diode_cv(df_res['V'].values, df_res['C'].values, model, report['parameters']))
+                
+                st.divider()
+                st.subheader("Diode C-V Physics Analysis")
+                
+                tab1, tab2 = st.tabs(["Extracted Depletion Width", "Junction State Visualization"])
+                with tab1:
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        st.markdown("### Depletion Width Extraction")
+                        area = st.slider("Device Area ($cm^2$)", min_value=1e-5, max_value=1e-2, value=7.096e-4, step=1e-5, format="%.2e")
+                    with col2:
+                        C_fit = model.compute_capacitance(df_res['V'].values, report['parameters'])
+                        w = diode_dep_width_plot(df_res['V'].values, C_fit, area)
+                        st.info("Depletion width $w$ increases with reverse bias voltage. $C = \\epsilon A / W$")
+                        st.pyplot(w)
+                    
+                with tab2:
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.markdown("### Junction State Visualization")
+                        v_min = float(df_res['V'].min())
+                        v_max = float(df_res['V'].max())
+                        vis_v = st.slider("Bias Voltage ($V$)", min_value=v_min, max_value=v_max, value=v_min, format="%.2f", key="cv_vis")
+                    with col2:
+                        fig_struct, ax_struct = plt.subplots(figsize=(5, 3))
+                        draw_diode_cross(ax_struct, report['parameters'], v_bias=vis_v)
+                        st.pyplot(fig_struct)
+
+            elif result['type'] == 'multi':
                 datasets = result['datasets']
                 fig, ax = plt.subplots(figsize=(10, 6))
                 colors = plt.cm.plasma(np.linspace(0, 1, len(datasets)))
@@ -216,45 +288,46 @@ if device_type == "Diode": # Diode logic
                 ax.legend()
                 st.pyplot(fig)
                 
-            st.divider()
-            st.subheader("Diode Physics & Characteristics")
-            
-            tab1, tab2 = st.tabs(["Physical Junction State", "3D Characteristics Surface"])
-            
-            with tab1:
-                st.markdown("### Physical Junction State")
-                v_min = 0.0
-                v_max = 1.0
+            if result['type'] != 'cv':
+                st.divider()
+                st.subheader("Diode I-V Physics Analysis")
                 
-                if result['type'] == 'single':
-                    v_min = float(result['df']['V'].min())
-                    v_max = float(result['df']['V'].max())
-                elif result['type'] == 'multi':
-                    all_v = np.concatenate([d[0] for d in result['datasets']])
-                    v_min = float(all_v.min())
-                    v_max = float(all_v.max())
+                tab1, tab2 = st.tabs(["Physical Junction State", "3D Characteristics Surface"])
                 
-                v_col1, v_col2 = st.columns(2)
-                with v_col1:
-                    vis_v = st.slider("Bias Voltage ($V$)", min_value=(v_min - 0.5), max_value=(v_max + 0.5), value=v_min, format="%.2f")
+                with tab1:
+                    st.markdown("### Physical Junction State")
+                    v_min = 0.0
+                    v_max = 1.0
                     
-                with v_col2:
-                    fig_struct, ax_struct = plt.subplots(figsize=(5, 3))
-                    draw_diode_cross(ax_struct, report['parameters'], v_bias=vis_v)
-                    st.pyplot(fig_struct)
+                    if result['type'] == 'single':
+                        v_min = float(result['df']['V'].min())
+                        v_max = float(result['df']['V'].max())
+                    elif result['type'] == 'multi':
+                        all_v = np.concatenate([d[0] for d in result['datasets']])
+                        v_min = float(all_v.min())
+                        v_max = float(all_v.max())
                     
-            with tab2:
-                if result['type'] == 'single':
-                    v_max = float(result['df']['V'].max())
-                    t_min, t_max = 280, 340
-                else:
-                    v = np.concatenate([d[0] for d in result['datasets']])
-                    v_max = float(v.max())
-                    t = [d[2] for d in result['datasets']]
-                    t_min, t_max = float(min(t)), float(max(t))
-                    
-                fig = plot_3d_diode(model, report['parameters'], v_max, t_min, t_max)
-                st.plotly_chart(fig, width='stretch')
+                    v_col1, v_col2 = st.columns(2)
+                    with v_col1:
+                        vis_v = st.slider("Bias Voltage ($V$)", min_value=(v_min - 0.5), max_value=(v_max + 0.5), value=v_min, format="%.2f")
+                        
+                    with v_col2:
+                        fig_struct, ax_struct = plt.subplots(figsize=(5, 3))
+                        draw_diode_cross(ax_struct, report['parameters'], v_bias=vis_v)
+                        st.pyplot(fig_struct)
+                        
+                with tab2:
+                    if result['type'] == 'single':
+                        v_max = float(result['df']['V'].max())
+                        t_min, t_max = 280, 340
+                    else:
+                        v = np.concatenate([d[0] for d in result['datasets']])
+                        v_max = float(v.max())
+                        t = [d[2] for d in result['datasets']]
+                        t_min, t_max = float(min(t)), float(max(t))
+                        
+                    fig = plot_3d_diode(model, report['parameters'], v_max, t_min, t_max)
+                    st.plotly_chart(fig, width='stretch')
     elif app_mode == "Physics Explorer":
         st.header("Diode Physics Explorer")
         col1, col2 = st.columns([1, 2])

@@ -6,19 +6,20 @@ A Python framework for extracting semiconductor device compact model parameters 
 ## Current features:
 
 ### Parameter Extraction
-* Diode: extract $I_s$, $n$, and $R_s$ from synthetic or real data through a .csv file. Supports multi-temperature analysis to extract $E_g$ and visualize $I_s(T)$
+* Diode: extract DC parameters ($I_s$, $n$, $R_s$) and C-V parameters ($C_j$, $V_{bi}$, $m$) from synthetic or real data, supports multi-temperature analysis to extract $E_g$ and junction capacitance profiling
 * MOSFET: Level 1 model (Schichman-Hodges) to extract $V_{th}$, $k_n$, and $\lambda$ from transfer and output characteristics
 * Generate noisy data using realistic synthesis datsets for testing extraction algorithms
 * Automatically generate SPICE-compatible model files from extracted parameters
 
 ### Visualization
-* Interactive physical states: dynamic cross-section diagrams for both diodes and MOSFETs that respond to sliders
+* Interactive physical states: dynamic cross-section diagrams for both diodes and MOSFETs that respond to bias voltage sliders
+* C-V Analysis: automated $1/C^2$ vs $V$ linearity plots and depletion width extraction vs bias
 * 3D characteristics surfaces: interactive 3D plots using Plotly to visualize device behavior over voltage and temperature ranges
 * Automated plotting: 2D plotting for fits, relative errors, and parameter trends
 
 ### Physics Explorer
 * Interactive energy band diagrams ($E_c, E_v, E_f$) for PN junctions and MOS capacitors
-* Real-time calculation of key metrics: built-in potential ($V_{bi}$), depletion width ($W$), threshold voltage ($V_{th}$), and surface potential ($\phi_s$)
+* Real-time calculation of key metrics: built-in potential ($V_{bi}$), depletion width ($W$), junction capacitance ($C_j$), threshold voltage ($V_{th}$), and surface potential ($\phi_s$)
 * Visualize effects of doping ($N_A, N_D$), temperature ($T$), and geometry ($t_{ox}$) on device physics
 
 ### GUI

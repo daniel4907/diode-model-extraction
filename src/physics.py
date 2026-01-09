@@ -28,11 +28,20 @@ class DiodePhysics:
         """
         Calculates the total depletion width as well as the n and p-side widths
         """
-        term = max(0, self.get_bi_potential() - v_bias)
+        term = np.maximum(0, self.get_bi_potential() - v_bias)
         w = np.sqrt((2 * self.eps_si / q_e) * (1/self.Na + 1/self.Nd) * (term))
         xp = w * (self.Nd / (self.Na + self.Nd))
         xn = w * (self.Na / (self.Na + self.Nd))
         return w, xp, xn
+    
+    def compute_junction_cap(self, v_bias, area=7.096e-4): # 7.096e-4 cm^2 is the ECE444 wafer area
+        """
+        Calculates the junction capacitance of the device
+        """
+        w, _, _ = self.get_dep_width(v_bias)
+        w_eff = np.maximum(w, 1e-12)
+        c = self.eps_si * area / w_eff
+        return c
         
     def compute_energy_bands(self, v_bias, x_grid):
         """

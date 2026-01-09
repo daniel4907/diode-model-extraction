@@ -108,10 +108,17 @@ def generate_spice_model(params, device_type, model_name='DUT'):
         n = params.get('n', 1.0)
         R_s = params.get('R_s', 0.0)
         
-        param_str = f"I_s={I_s:.5e} n={n:.4f} R_s={R_s:.4f}"
+        param_str = f"IS={I_s:.5e} N={n:.4f} RS={R_s:.4f}"
         
         if 'Eg' in params:
-            param_str += f" Eg={params['Eg']:.4f}"
+            param_str += f" EG={params['Eg']:.4f}"
+        
+        if 'C_j' in params:
+            param_str += f" CJO={params['C_j']:.5e}"
+        if 'V_bi' in params:
+            param_str += f" VJ={params['V_bi']:.4f}"
+        if 'm' in params:
+            param_str += f" M={params['m']:.4f}"
             
         return f".MODEL {model_name} D({param_str})\n"
 

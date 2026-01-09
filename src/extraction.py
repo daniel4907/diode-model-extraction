@@ -155,6 +155,52 @@ class ModelExtractor:
         
         return report
     
+    def diode_cv_fit(self, V_data, C_data, initial_params=None):
+        if initial_params is None:
+            initial_params = {'C_j': 1e-12, 'V_bi': 0.7, 'm': 0.5}
+        
+        if 'C_j' not in initial_params:
+            initial_params['C_j'] = 1e-12
+        if 'V_bi' not in initial_params:
+            initial_params['V_bi'] = 0.7
+        if 'm' not in initial_params:
+            initial_params['m'] = 0.5
+        
+        def residuals(param_vector, V_data, C_data):
+            local_params = {'C_j': param_vector[0], 'V_bi': param_vector[1], 'm': param_vector[2]}
+            C_guess = self.model.compute_capacitance(V_data, local_params)
+            residual = (C_guess - C_data) / np.maximum(np.abs(C_data), 1e-15)
+            return residual
+        
+        x0 = np.array([initial_params['C_j'], initial_params['V_bi'], initial_params['m']])
+        bounds = self.model.get_param_bounds()
+        lower_bound = np.array([bounds['C_j'][0], bounds['V_bi'][0], bounds['m'][0]])
+        upper_bound = np.array([bounds['C_j'][1], bounds['V_bi'][1], bounds['m'][1]])
+        ls = least_squares(
+            residuals,
+            x0,
+            bounds=(lower_bound, upper_bound),
+            args=(V_data, C_data),
+            method='trf'
+        )
+        
+        ls_params = {'C_j': ls.x[0], 'V_bi': ls.x[1], 'm': ls.x[2]}
+        res = residuals(ls.x, V_data, C_data)
+        rms_err = np.sqrt(np.mean(res**2))
+        
+        report = {
+            'parameters': ls_params,
+            'rms_err': rms_err,
+            'success': ls.success,
+            'num_iters': ls.nfev,
+            'message': ls.message,
+        }
+        
+        self.result = ls
+        self.report = report
+        
+        return report
+    
     def mosfet_fit(self, V_gs, I_data, V_ds, initial_params=None):
         """
         Fit a single I-V curve to extract threshold voltage, transconductance, lambda, and drain-to-source voltage of a device

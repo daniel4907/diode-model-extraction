@@ -94,6 +94,21 @@ def diode_error_plot(V_data, I_data, model, fitted_params, filename=None, temps=
         
             plt.show()
             
+def diode_dep_width_plot(V_data, C_data, area, filename=None):
+    eps_si = 11.7 * 8.85e-14
+    w = eps_si * area / C_data
+    
+    fig, ax = plt.subplots(figsize=(6, 4))
+    ax.plot(V_data, w * 1e4)
+    ax.set_xlabel("Voltage [V]")
+    ax.set_ylabel("Depletion Width [$\mu m$]")
+    ax.set_title("Extracted Depletion Width vs Voltage")
+    
+    if filename is not None:
+        plt.savefig(filename, dpi=300, bbox_inches='tight')
+        
+    return fig
+            
 def diode_sat_current_plot(temps, model, fitted_params, filename=None):
     """
     Plots the saturation current as a function of temperature
@@ -134,7 +149,7 @@ def draw_diode_cross(ax, params, v_bias=0.0):
         w_dep = 0.05
     else:
         w_dep = 0.3 * np.sqrt(max(0, v_bi - v_bias))
-        
+    
     p_width = 1.5 - w_dep
     n_start = 1.5 + w_dep
     n_width = 1.5 - w_dep
@@ -197,6 +212,31 @@ def plot_3d_diode(model, params, v_max=1.0, t_min=280, t_max=340):
         margin=dict(l=0, r=0, b=0, t=40)
     )
     
+    return fig
+
+def plot_diode_cv(V_data, C_data, model, fitted_params, filename=None):
+    C_fit = model.compute_capacitance(V_data, fitted_params)
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
+    
+    ax1.plot(V_data, C_data * 1e12, 'o', label='Original data')
+    ax1.plot(V_data, C_fit * 1e12, '-', label='Fitted data')
+    ax1.set_xlabel("Voltage [V]")
+    ax1.set_ylabel("Capacitance [pF]")
+    ax1.set_title("Diode C-V Characteristics")
+    ax1.legend()
+    
+    ax2.plot(V_data, 1.0 / (C_data**2), 'o', label='Original data')
+    ax2.plot(V_data, 1.0 / (C_fit**2), '-', label='Fitted data')
+    ax2.set_xlabel("Voltage [V]")
+    ax2.set_ylabel("$1/C^2$ [$F^{-2}$]")
+    ax2.set_title("$1/C^2$ vs Voltage")
+    ax2.legend()
+    
+    plt.tight_layout()
+    
+    if filename is not None:
+        plt.savefig(filename, dpi=300, bbox_inches='tight')
+        
     return fig
 
 def plot_mosfet_fit(V_gs, I_data, model, fitted_params, filename=None, yscale='linear'):

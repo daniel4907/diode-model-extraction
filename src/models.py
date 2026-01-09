@@ -65,6 +65,15 @@ class DiodeModel:
     def compute_sat_current(self, Is, Eg, T, T_ref=300):
         return Is * (T / T_ref)**3 * np.exp(((Eg * q_e) / k_B) * (1/T_ref - 1/T))
     
+    def compute_capacitance(self, V, params):
+        C_j = params['C_j']
+        V_bi = params['V_bi']
+        m = params.get('m', 0.5)
+        V = np.asarray(V)
+        arg = 1 - V / V_bi
+        Cj = C_j / np.power(np.maximum(arg, 1e-3), m)
+        return Cj
+    
     def get_param_bounds(self):
         """
         Returns standard bounds for device parameter
@@ -76,7 +85,10 @@ class DiodeModel:
             'I_s': (1e-16, 1e-6),
             'Eg': (0.1, 5.0),
             'n': (1.0, 2.0),
-            'R_s': (0.0, 10.0)
+            'R_s': (0.0, 10.0),
+            'C_j': (1e-15, 1e-6),
+            'V_bi': (0.1, 1.5),
+            'm': (0.1, 0.9)
         }
         
 # 3 regions for MOSFETs: cutoff, triode and saturation regions
