@@ -6,7 +6,7 @@ import numpy as np
 import torch
 import os 
 
-from src.models import DiodeNet, MOSFETNet
+from src.models import *
 from scipy.optimize import least_squares
 from scipy.constants import k as k_B, e as q_e
 
@@ -190,9 +190,40 @@ class ModelExtractor:
         
         return report
     
+    def _get_diode_cv_guess(self, V_data, C_data):
+        model_path = 'models/diode_cv_model_weights.pth'
+        if not os.path.exists(model_path):
+            return None
+        
+        try:
+            target_v = np.linspace(-5.0, 0.0, 150)
+            sort_idx = np.argsort(V_data) # sort data to get interpolation to work
+            v_sort = V_data[sort_idx]
+            c_sort = C_data[sort_idx]
+            c_interp = np.interp(target_v, v_sort, c_sort)
+            c_log = np.log10(np.abs(c_interp) + 1e-20) # log transform to match training data preprocessing
+            inputs = torch.tensor(c_log, dtype=torch.float32).unsqueeze(0) # (1, 150)
+            
+            model = DiodeNet(input_size=150)
+            model.load_state_dict(torch.load(model_path))
+            model.eval()
+            
+            with torch.no_grad():
+                preds = model(inputs).numpy()[0]
+                
+            return {'C_j': 10 ** preds[0], 'V_bi': preds[1], 'm': preds[2]}
+        
+        except Exception as e:
+            print(f"Diode C-V ML interference warning: {e}")
+            return None
+    
     def diode_cv_fit(self, V_data, C_data, initial_params=None):
         if initial_params is None:
-            initial_params = {'C_j': 1e-12, 'V_bi': 0.7, 'm': 0.5}
+            ml_g = self._get_diode_cv_guess(V_data, C_data)
+            if ml_g:
+                initial_params = ml_g
+            else:
+                initial_params = {'C_j': 1e-12, 'V_bi': 0.7, 'm': 0.5}
         
         if 'C_j' not in initial_params:
             initial_params['C_j'] = 1e-12
@@ -271,8 +302,43 @@ class ModelExtractor:
         except Exception as e:
             print(f"MOSFET transfer ML interference warning: {e}")
             return None
+        
+    def _get_mosfet_output_ml_guess(self, V_data, I_data, V_gs):
+        model_path = 'models/mosfet_output_model_weights.pth'
+        if not os.path.exists(model_path):
+            return None
+        
+        try:
+            if np.ndim(V_gs) > 0:
+                vgs = float(np.mean(V_gs))
+            else:
+                vgs = float(V_gs)
+                
+            v_max = float(np.max(V_data))
+            target_v = np.linspace(0, v_max, 150)
+            sort_idx = np.argsort(V_data) # sort data to get interpolation to work
+            v_sort = V_data[sort_idx]
+            i_sort = I_data[sort_idx]
+            i_interp = np.interp(target_v, v_sort, i_sort)
+            i_log = np.log10(np.abs(i_interp) + 1e-15) # log transform to match training data preprocessing
+            
+            meta = np.array([vgs / 5.0, v_max / 5.0])
+            features = np.concatenate([i_log, meta])
+            inputs = torch.tensor(features, dtype=torch.float32).unsqueeze(0) # (1, 152)
+            
+            model = MOSFETNet(input_size=152)
+            model.load_state_dict(torch.load(model_path))
+            model.eval()
+            
+            with torch.no_grad():
+                preds = model(inputs).numpy()[0]
+                
+            return {'V_th': preds[0], 'k_n': 10 ** preds[1], 'lam': preds[2]}
+        
+        except Exception as e:
+            print(f"MOSFET output ML interference warning: {e}")
+            return None
 
-    
     def mosfet_fit(self, V_gs, I_data, V_ds, initial_params=None):
         """
         Fit a single I-V curve to extract threshold voltage, transconductance, lambda, and drain-to-source voltage of a device
@@ -287,7 +353,13 @@ class ModelExtractor:
             dict: report containing fitted parameters, errors and solver status
         """
         if initial_params is None:
-            ml_g = self._get_mosfet_transfer_ml_guess(V_gs, I_data, V_ds)
+            is_transfer = np.std(V_gs) > np.std(V_ds)
+            ml_g = None
+            if is_transfer:
+                ml_g = self._get_mosfet_transfer_ml_guess(V_gs, I_data, V_ds)
+            else:
+                ml_g = self._get_mosfet_output_ml_guess(V_ds, I_data, V_gs)
+            
             if ml_g:
                 initial_params = ml_g
             else:
@@ -299,6 +371,15 @@ class ModelExtractor:
             initial_params['k_n'] = 1e-4
         if 'lam' not in initial_params:
             initial_params['lam'] = 0.0
+            
+        I_check = self.model.compute_current(V_gs, initial_params)
+        if np.all(I_check <= 1e-15) and np.any(I_data > 1e-9):
+            print("Warning: initial guess places devices in cutoff, adjusting v_th")
+            pos_vgs = V_gs[V_gs > 0]
+            if len(pos_vgs) > 0:
+                initial_params['V_th'] = max(0.1, np.min(pos_vgs) * 0.5)
+            else:
+                initial_params['V_th'] = 0.5
             
         def residuals(param_vector, V_gs, I_data, V_ds):
             """
@@ -354,7 +435,18 @@ class ModelExtractor:
             dict: report containing fitted parameters, errors and solver status
         """
         if initial_params is None:
-            initial_params = {'V_th': 0.5, 'k_n': 1e-4, 'lam': 0.0}
+            try: # make guess using higheest v_gs
+                best_idx = np.argmax([d[2] for d in datasets])
+                v_ds, i, v_gs = datasets[best_idx]
+                ml_g = self._get_mosfet_output_ml_guess(v_ds, i, v_gs)
+                
+                if ml_g:
+                    initial_params = ml_g
+            except Exception as e:
+                print(f"Multi-curve ML guess failed: {e}")
+                
+            if initial_params is None:
+                initial_params = {'V_th': 0.5, 'k_n': 1e-4, 'lam': 0.0}
             
         if 'V_th' not in initial_params:
             initial_params['V_th'] = 0.5

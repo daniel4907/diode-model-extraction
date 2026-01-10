@@ -155,7 +155,29 @@ def generate_training_data_diode(n_samples, v_range):
         y_data.append([np.log10(I_s), n, R_s])
         
     return np.array(x_data), np.array(y_data)
+
+def generate_training_data_cv_diode(n_samples):
+    v = np.linspace(-5.0, 0, 150)
+    x_data, y_data = [], []
+    model = DiodeModel()
+    bounds = model.get_param_bounds()
+    
+    for _ in range(n_samples):
+        low_log = np.log10(bounds['C_j'][0])
+        high_log = np.log10(bounds['C_j'][1])
+        C_j = 10 ** np.random.uniform(low_log, high_log)
+        v_bi = np.random.uniform(bounds['V_bi'][0], bounds['V_bi'][1])
+        m = np.random.uniform(bounds['m'][0], bounds['m'][1])
+        local_params = {'C_j': C_j, 'V_bi': v_bi, 'm': m}
+        C_true = model.compute_capacitance(v, local_params)
+        C_noise = C_true * (1 + np.random.normal(scale=0.02, size=C_true.shape))
+        C_noise = np.abs(C_noise)
+        C_final = np.log10(C_noise + 1e-20)
+        x_data.append(C_final)
+        y_data.append([np.log10(C_j), v_bi, m])
         
+    return np.array(x_data), np.array(y_data)
+
 def generate_training_transfer_mosfet(n_samples):
     x_data, y_data = [], []
     
@@ -177,6 +199,33 @@ def generate_training_transfer_mosfet(n_samples):
         I_noise = np.abs(I_noise)
         I_final = np.log10(I_noise + 1e-15)
         features = np.concatenate([I_final, [vds / 5.0, v_max / 5.0]])
+        x_data.append(features)
+        y_data.append([vth, np.log10(kn), lam])
+        
+    return np.array(x_data), np.array(y_data)
+
+def generate_training_output_mosfet(n_samples):
+    x_data, y_data = [], []
+    
+    model = MOSFETModel()
+    bounds = model.get_param_bounds()
+    
+    for _ in range(n_samples):
+        v_max = np.random.uniform(1.0, 5.0)
+        vds = np.linspace(0, v_max, 150)
+        vth = np.random.uniform(bounds['V_th'][0], bounds['V_th'][1])
+        low_log = np.log10(bounds['k_n'][0])
+        high_log = np.log10(bounds['k_n'][1])
+        kn = 10 ** np.random.uniform(low_log, high_log)
+        lam = np.random.uniform(bounds['lam'][0], bounds['lam'][1])
+        vgs = np.random.uniform(1.0, 5.0)
+        local_params = {'V_th': vth, 'k_n': kn, 'lam': lam, 'V_ds': vds}
+        vgs_array = np.full_like(vds, vgs)
+        I_true = model.compute_current(vgs_array, local_params)
+        I_noise = I_true * (1 + np.random.normal(scale=0.01, size=I_true.shape))
+        I_noise = np.abs(I_noise)
+        I_final = np.log10(I_noise + 1e-15)
+        features = np.concatenate([I_final, [vgs / 5.0, v_max / 5.0]])
         x_data.append(features)
         y_data.append([vth, np.log10(kn), lam])
         

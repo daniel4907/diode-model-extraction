@@ -157,9 +157,28 @@ if device_type == "Diode": # Diode logic
                     st.session_state['guess_Rs'] = float(params['R_s'])
                 
                 if fit_mode == 'C-V Curve':
-                    g_Cj = st.number_input("Guess $C_j$", value=1e-12, format="%.2e")
-                    g_Vbi = st.number_input("Guess $V_{bi}$", value=0.7)
-                    g_m = st.number_input("Guess m", value=0.5)
+                    if 'guess_Cj' not in st.session_state: st.session_state['guess_Cj'] = 1e-12
+                    if 'guess_Vbi' not in st.session_state: st.session_state['guess_Vbi'] = 0.7
+                    if 'guess_m' not in st.session_state: st.session_state['guess_m'] = 0.5
+                    
+                    if source != "Synthetic":
+                        def run_diode_cv_guess():
+                            temp_model = DiodeModel()
+                            temp_ext = ModelExtractor(temp_model)
+                            pred = temp_ext._get_diode_cv_guess(df['V'].values, df['C'].values)
+                            if pred:
+                                st.session_state['guess_Cj'] = float(pred['C_j'])
+                                st.session_state['guess_Vbi'] = float(pred['V_bi'])
+                                st.session_state['guess_m'] = float(pred['m'])
+                                st.toast("ML Prediction Applied")
+                            else:
+                                st.toast("ML Prediction Failed")
+                                
+                        st.button("Auto-Guess Parameters (ML)", on_click=run_diode_cv_guess)
+                        
+                    g_Cj = st.number_input("Guess $C_j$", value=1e-12, format="%.2e", key='guess_Cj')
+                    g_Vbi = st.number_input("Guess $V_{bi}$", value=0.7, key='guess_Vbi')
+                    g_m = st.number_input("Guess $m$", value=0.5, key='guess_m')
                 else: 
                     if 'guess_Is' not in st.session_state: st.session_state['guess_Is'] = 1e-12
                     if 'guess_n' not in st.session_state: st.session_state['guess_n'] = 1.0
@@ -433,7 +452,14 @@ elif device_type == "MOSFET": # MOSFET logic
                 if synth_type == "Transfer Curve ($I_{d}-V_{gs}$)":
                     df, model = generate_synthetic_mosfet(true_Vth, true_kn, true_lam)
                 else:
-                    df, model = generate_synthetic_mosfet_family(true_Vth, true_kn, true_lam, V_gs=[1.5, 2.0, 2.5, 3.0])
+                    vgs_input = st.text_input("Family $V_{gs}$ values (comma-separated)", value="1.5, 2.0, 2.5, 3.0, 3.5, 4.0")
+                    try:
+                        vgs_list = [float(x.strip()) for x in vgs_input.split(',')]
+                    except ValueError:
+                        st.error("Invalid Vgs list format")
+                        vgs_list = [1.5, 2.0, 2.5, 3.0]
+                    
+                    df, model = generate_synthetic_mosfet_family(true_Vth, true_kn, true_lam, V_gs=vgs_list)
                 
             else:
                 csv = st.file_uploader("Upload CSV", type=['csv'], key="csv_mosfet")
@@ -466,31 +492,55 @@ elif device_type == "MOSFET": # MOSFET logic
                     def run_mos_ml_guess():
                         temp_model = MOSFETModel()
                         temp_ext = ModelExtractor(temp_model)
+                        pred = None
                         
-                        if 'V_ds' in df.columns: # heuristic, vds with most points
-                            vds_counts = df['V_ds'].value_counts()
-                            vds = vds_counts.idxmax()
-                            count = vds_counts.max()
-                        else: # fallback if only one vds
-                            vds = df['V_ds'].iloc[0] if 'V_ds' in df.columns else 0.0
-                            count = len(df)
+                        if fit_mode == 'Multi-Curve':
+                            try:
+                                unique_vgs = sorted(df['V_gs'].unique())
+                                preds_vth, preds_kn, preds_lam = [], [], []
+                                
+                                for vgs in unique_vgs:
+                                    sub = df[df['V_gs'] == vgs].sort_values('V_ds')
+                                    if len(sub) < 10: continue
+                                    p = temp_ext._get_mosfet_output_ml_guess(sub['V_ds'].values, sub['I_d'].values, float(vgs))
+                                    
+                                    if p:
+                                        preds_vth.append(p['V_th'])
+                                        preds_kn.append(p['k_n'])
+                                        preds_lam.append(p['lam'])
+                                
+                                if preds_vth:
+                                    pred = {
+                                        'V_th': np.median(preds_vth),
+                                        'k_n': np.median(preds_kn),
+                                        'lam': np.median(preds_lam)
+                                    }
+                            except Exception as e:
+                                print(f"Multi-curve guess error: {e}")
                             
-                        if count > 10:
-                            sub = df[df['V_ds'] == vds].sort_values('V_gs')
-                            pred = temp_ext._get_mosfet_transfer_ml_guess(sub['V_gs'].values, sub['I_d'].values, vds)
-                            if pred:
-                                st.session_state['guess_Vth'] = float(pred['V_th'])
-                                st.session_state['guess_kn'] = float(pred['k_n'])
-                                st.toast("ML Prediction Applied")
-                            else:
-                                st.toast("ML Prediction Failed")
                         else:
-                            st.toast("Insufficient data points for ML guess")
+                            if sweep_type == "$I_{d}-V_{gs}$ (Transfer)":
+                                sub = df[df['V_ds'] == sel_param].sort_values('V_gs')
+                                pred = temp_ext._get_mosfet_transfer_ml_guess(sub['V_gs'].values, sub['I_d'].values, float(sel_param))
+                            else:
+                                sub = df[df['V_gs'] == sel_param].sort_values('V_ds')
+                                pred = temp_ext._get_mosfet_output_ml_guess(sub['V_ds'].values, sub['I_d'].values, float(sel_param))
+                                
+                        if pred:
+                            st.session_state['guess_Vth'] = float(pred['V_th'])
+                            st.session_state['guess_kn'] = float(pred['k_n'])
+                            if 'lam' in pred:
+                                st.session_state['guess_lam'] = float(pred['lam'])
+        
+                            st.toast("ML Prediction Applied")
+                        else:
+                            st.toast("ML Prediction Failed")
                             
                     st.button("Auto-Guess Parameters (ML)", on_click=run_mos_ml_guess)
                     
                 g_Vth = st.number_input("Guess $V_{th}$ (V)", key='guess_Vth')
                 g_kn = st.number_input("Guess $k_{n}$", format="%.2e", key='guess_kn')
+                g_lam = st.number_input("Guess $\lambda$", format="%.4f", step=0.01, key='guess_lam')
 
             if fit_mode == "Multi-Curve": # detect how many unique family curves exist within CSV
                 st.info(f"Detected {df['V_gs'].nunique()} unique $V_{{gs}}$ curves for global fit.")

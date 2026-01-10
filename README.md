@@ -7,8 +7,8 @@ A Python framework for extracting semiconductor device compact model parameters 
 
 ### Parameter Extraction
 * Diode: extract DC parameters ($I_s$, $n$, $R_s$) and C-V parameters ($C_j$, $V_{bi}$, $m$) from synthetic or real data, supports multi-temperature analysis to extract $E_g$ and junction capacitance profiling
-* MOSFET: Level 1 model (Schichman-Hodges) to extract $V_{th}$, $k_n$, and $\lambda$ from transfer and output characteristics
-* Neural network-based automatic parameter guessing for diode I-V data and MOSFET transfer characteristics to ensure robust optimizer convergence without manual tuning
+* MOSFET: Level 1 model (Schichman-Hodges) to extract $V_{th}$, $k_n$, and $\lambda$ from transfer, output, and multi-curve family characteristics
+* Neural network-based automatic parameter guessing for diode I-V/C-V and MOSFET trasnfer/output characteristics to ensure robust optimizer convergence without manual tuning
 * Generate noisy data using realistic synthesis datsets for testing extraction algorithms
 * Automatically generate SPICE-compatible model files from extracted parameters
 
