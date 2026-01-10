@@ -237,6 +237,18 @@ if device_type == "Diode": # Diode logic
             report = result['report']
             model = result['model']
             
+            st.success("Extraction Converged")
+            
+            if result['type'] != 'cv':
+                c1, c2, c3, c4 = st.columns(4)
+                fit_params = report['parameters']
+                c1.metric("$I_s$ (A)", f"{fit_params['I_s']:.2e}")
+                c2.metric("Ideality $n$", f"{fit_params['n']:.4f}")
+                c3.metric("Series $R_s$ ($\Omega$)", f"{fit_params['R_s']:.4f}")
+                
+                if result['type'] ==  'multi':
+                    c4.metric("Bandgap $E_g$ (eV)", f"{fit_params['Eg']:.4f}")
+            
             st.divider()
             st.subheader("SPICE Model")
             spice_str = generate_spice_model(report['parameters'], "diode", model_name="Diode_Model")
